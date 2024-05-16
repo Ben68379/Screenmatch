@@ -1,23 +1,30 @@
 package com.aluracursos.screenmatch.Principal;
+import com.aluracursos.screenmatch.modelo.Episodio;
 import com.aluracursos.screenmatch.modelo.Serie;
 import com.aluracursos.screenmatch.modelo.SerieDatos;
 import com.aluracursos.screenmatch.modelo.TemporadasDatos;
+import com.aluracursos.screenmatch.repository.SerieRepository;
 import com.aluracursos.screenmatch.service.ConsumoAPI;
 import com.aluracursos.screenmatch.service.ConvierteDatos;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.Scanner;
-import java.util.stream.Collectors;
 
+import java.util.*;
+import java.util.stream.Collectors;
 public class Principal {
+
     private Scanner teclado = new Scanner(System.in);
     private ConsumoAPI consumoApi = new ConsumoAPI();
     private final String URL_BASE = "https://www.omdbapi.com/?t=";
-    private final String API_KEY = "apikey";
+    private final String API_KEY = "&apikey=dfcd67d8";
     private ConvierteDatos conversor = new ConvierteDatos();
     private List<SerieDatos> datosSeries = new ArrayList<>();
+    private List<Serie> series = new ArrayList<>();
 
+
+
+    private SerieRepository repository;
+    public Principal(SerieRepository repository) {
+        this.repository = repository;
+    }
     public void muestraElMenu() {
         var opcion = -1;
         while (opcion != 0) {
@@ -40,7 +47,7 @@ public class Principal {
                     buscarEpisodioPorSerie();
                     break;
                 case 3:
-                    mostrarSeriesBuscadas();
+                    listarSeriesBuscadas();
                     break;
 
                 case 0:
@@ -62,30 +69,43 @@ public class Principal {
         return datos;
     }
     private void buscarEpisodioPorSerie() {
-        SerieDatos datosSerie = getDatosSerie();
-        List<TemporadasDatos> temporadas = new ArrayList<>();
+        listarSeriesBuscadas();
+        System.out.println("Escriba el nombre de la serie que desea ver");
+        var nombreSerie = teclado.nextLine();
+        Optional<Serie> serie = series.stream()
+                .filter(s -> s.getTitulo().toLowerCase().contains(nombreSerie.toLowerCase()))
+                .findFirst();
+        if (serie.isPresent()) {
+            var serieBuscada = serie.get();
+            List<TemporadasDatos> temporadas = new ArrayList<>();
+            for (int i = 1; i <= serieBuscada.getTotalTemporadas(); i++) {
+                var json = consumoApi.obtenerDatos(URL_BASE + serieBuscada.getTitulo().replace(" ", "+") + "&season=" + i + API_KEY);
+                TemporadasDatos datosTemporada = conversor.obtenerDatos(json, TemporadasDatos.class);
+                temporadas.add(datosTemporada);
+            }
+//            temporadas.forEach(System.out::println);
+            List<Episodio> episodios = temporadas.stream()
+                    .flatMap(d -> d.episodios().stream()
+                            .map(e -> new Episodio(d.Temporadas(), e)))
+                    .collect(Collectors.toList());
 
-        for (int i = 1; i <= datosSerie.totalTemporadas(); i++) {
-            var json = consumoApi.obtenerDatos(URL_BASE + datosSerie.titulo().replace(" ", "+") + "&season=" + i + API_KEY);
-            TemporadasDatos datosTemporada = conversor.obtenerDatos(json, TemporadasDatos.class);
-            temporadas.add(datosTemporada);
+            serieBuscada.setEpisodios(episodios);
+            repository.save(serieBuscada);
         }
-        temporadas.forEach(System.out::println);
     }
     private void buscarSerieWeb() {
         SerieDatos datos = getDatosSerie();
+        Serie serie = new Serie(datos);
+        repository.save(serie);
+        //datosSeries.add(datos);
         System.out.println(datos);
     }
-        private void mostrarSeriesBuscadas() {
+    private void listarSeriesBuscadas() {
+        series = repository.findAll();
+        series.stream()
+                .sorted(Comparator.comparing(Serie::getGenero))
+                .forEach(System.out::println);
 
-            List<Serie> series = new ArrayList<>();
-            series = datosSeries.stream()
-                    .map(d -> new Serie(d))
-                    .collect(Collectors.toList());
-
-            series.stream()
-                    .sorted(Comparator.comparing(Serie::getGenero))
-                    .forEach(System.out::println);
-        }
+    }
     }
 
